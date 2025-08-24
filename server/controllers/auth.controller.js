@@ -162,3 +162,126 @@ export const registerTraveler = async (req, res) => {
     }
 }
 
+// Admin function to approve/reject traveler applications
+export const approveTraveler = async (req, res) => {
+    const { userId, action } = req.body; // action: 'approve' or 'reject'
+
+    try {
+        // Check if current user is admin
+        if (!req.user.role.includes('admin')) {
+            return res.status(403).json({
+                success: false,
+                message: "Access denied. Admin privileges required."
+            });
+        }
+
+        // Find the user
+        const user = await userModel.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        // Check if user has pending traveler application
+        if (!user.travelerProfile || user.travelerProfile.approvalStatus !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: "No pending traveler application found for this user"
+            });
+        }
+
+        if (action === 'approve') {
+            // Approve traveler
+            user.role = ["traveler"];
+            user.travelerProfile.approvalStatus = 'approved';
+            user.travelerProfile.isApproved = true;
+            user.travelerProfile.approvedAt = new Date();
+            user.travelerProfile.approvedBy = req.user._id;
+
+            await user.save();
+
+            // Send approval email to user
+
+            res.status(200).json({
+                success: true,
+                message: "Traveler application approved successfully",
+                data: {
+                    userId: user._id,
+                    username: user.username,
+                    newRole: user.role,
+                    approvalStatus: 'approved'
+                }
+            });
+
+        } else if (action === 'reject') {
+            // Reject traveler
+            user.travelerProfile.approvalStatus = 'rejected';
+            user.travelerProfile.isApproved = false;
+            user.travelerProfile.rejectedAt = new Date();
+            user.travelerProfile.rejectedBy = req.user._id;
+
+            await user.save();
+
+            // Send rejection email to user
+
+            res.status(200).json({
+                success: true,
+                message: "Traveler application rejected",
+                data: {
+                    userId: user._id,
+                    username: user.username,
+                    approvalStatus: 'rejected'
+                }
+            });
+
+        } else {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid action. Use 'approve' or 'reject'"
+            });
+        }
+
+    } catch (err) {
+        console.log(`Error occurred during traveler approval: ${err.message}`);
+        res.status(500).json({
+            success: false,
+            message: 'Approval process failed. Please try again later.'
+        });
+    }
+}
+
+// Get pending traveler applications (Admin only)
+export const getPendingTravelers = async (req, res) => {
+    try {
+        // Check if current user is admin
+        if (!req.user.role.includes('admin')) {
+            return res.status(403).json({
+                success: false,
+                message: "Access denied. Admin privileges required."
+            });
+        }
+
+        const pendingTravelers = await userModel.find({
+            'travelerProfile.approvalStatus': 'pending'
+        }).select('-password').sort({ 'travelerProfile.appliedAt': -1 });
+
+        res.status(200).json({
+            success: true,
+            message: "Pending traveler applications fetched successfully",
+            data: {
+                count: pendingTravelers.length,
+                travelers: pendingTravelers
+            }
+        });
+
+    } catch (err) {
+        console.log(`Error occurred while fetching pending travelers: ${err.message}`);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch pending applications.'
+        });
+    }
+}
+
