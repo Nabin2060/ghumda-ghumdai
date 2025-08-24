@@ -285,3 +285,268 @@ export const getPendingTravelers = async (req, res) => {
     }
 }
 
+// User Login (role: user only)
+export const loginUser = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        console.log('User login attempt:', { email: email.toLowerCase() });
+
+        // Find user with user role
+        const user = await userModel.findOne({
+            email: email.toLowerCase(),
+            role: { $in: ["user"] }
+        }).select('+password');
+
+        console.log('User found:', user ? 'YES' : 'NO');
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid email or password or account type",
+            });
+        }
+
+        // Check if user is active
+        if (!user.isActive) {
+            return res.status(403).json({
+                success: false,
+                message: "User account is not active. Please contact support."
+            });
+        }
+
+        // Check if user is blocked
+        if (user.isBlocked) {
+            if (user.blockExpiry && new Date() > user.blockExpiry) {
+                // Auto-unblock the user
+                user.isBlocked = false;
+                user.blockedAt = null;
+                user.blockedBy = null;
+                user.blockReason = "";
+                user.blockExpiry = null;
+                await user.save();
+            } else {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Account is blocked',
+                    data: {
+                        reason: user.blockReason,
+                        blockedAt: user.blockedAt,
+                        blockExpiry: user.blockExpiry
+                    }
+                });
+            }
+        }
+
+        // Verify password
+        const isPasswordValid = await comparePassword(password, user.password);
+        console.log('Password valid:', isPasswordValid);
+
+        if (!isPasswordValid) {
+            user.loginAttempts += 1;
+            await user.save();
+            return res.status(401).json({
+                success: false,
+                message: "Invalid email or password",
+            });
+        }
+
+        // Reset login attempts and update last login
+        user.loginAttempts = 0;
+        user.lastLogin = new Date();
+        await user.save();
+
+        // Generate JWT token using your token.js function
+        const token = generateToken(user._id);
+
+        res.status(200).json({
+            success: true,
+            message: 'User login successful',
+            data: {
+                user: sanitizeUser(user),
+                token: token,
+                userType: 'user'
+            }
+        });
+
+    } catch (err) {
+        console.log(`Error occurred during user login: ${err.message}`);
+        res.status(500).json({
+            success: false,
+            message: 'Login failed. Please try again later.'
+        });
+    }
+};
+
+// Traveler Login (role: traveler, approved only)
+export const loginTraveler = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        console.log('Traveler login attempt:', { email: email.toLowerCase() });
+
+        // Find traveler with traveler role and approved status
+        const traveler = await userModel.findOne({
+            email: email.toLowerCase(),
+            role: { $in: ["traveler"] },
+            'travelerProfile.isApproved': true,
+            'travelerProfile.approvalStatus': 'approved'
+        }).select('+password');
+
+        console.log('Traveler found:', traveler ? 'YES' : 'NO');
+
+        if (!traveler) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid credentials or account not approved for traveler access",
+            });
+        }
+
+        // Check if traveler is active
+        if (!traveler.isActive) {
+            return res.status(403).json({
+                success: false,
+                message: "Traveler account is not active. Please contact support."
+            });
+        }
+
+        // Check if traveler is blocked
+        if (traveler.isBlocked) {
+            if (traveler.blockExpiry && new Date() > traveler.blockExpiry) {
+                // Auto-unblock
+                traveler.isBlocked = false;
+                traveler.blockedAt = null;
+                traveler.blockedBy = null;
+                traveler.blockReason = "";
+                traveler.blockExpiry = null;
+                await traveler.save();
+            } else {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Traveler account is blocked',
+                    data: {
+                        reason: traveler.blockReason,
+                        blockedAt: traveler.blockedAt,
+                        blockExpiry: traveler.blockExpiry
+                    }
+                });
+            }
+        }
+
+        // Verify password
+        const isPasswordValid = await comparePassword(password, traveler.password);
+        console.log('Password valid:', isPasswordValid);
+
+        if (!isPasswordValid) {
+            traveler.loginAttempts += 1;
+            await traveler.save();
+            return res.status(401).json({
+                success: false,
+                message: "Invalid email or password",
+            });
+        }
+
+        // Reset login attempts and update last login
+        traveler.loginAttempts = 0;
+        traveler.lastLogin = new Date();
+        await traveler.save();
+
+        // Generate JWT token using your token.js function
+        const token = generateToken(traveler._id);
+
+        res.status(200).json({
+            success: true,
+            message: 'Traveler login successful',
+            data: {
+                user: sanitizeUser(traveler),
+                token: token,
+                userType: 'traveler',
+                businessInfo: {
+                    businessName: traveler.travelerProfile.businessName,
+                    approvedAt: traveler.travelerProfile.approvedAt
+                }
+            }
+        });
+
+    } catch (err) {
+        console.log(`Error occurred during traveler login: ${err.message}`);
+        res.status(500).json({
+            success: false,
+            message: 'Login failed. Please try again later.'
+        });
+    }
+};
+
+// Admin Login (role: admin only)
+export const loginAdmin = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        console.log('Admin login attempt:', { email: email.toLowerCase() });
+
+        // Find admin with admin role
+        const admin = await userModel.findOne({
+            email: email.toLowerCase(),
+            role: { $in: ["admin"] }
+        }).select('+password');
+
+        console.log('Admin found:', admin ? 'YES' : 'NO');
+
+        if (!admin) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid admin credentials",
+            });
+        }
+
+        // Check if admin is active
+        if (!admin.isActive) {
+            return res.status(403).json({
+                success: false,
+                message: "Admin account is not active. Please contact super admin."
+            });
+        }
+
+        // Admins cannot be blocked by other admins (security measure)
+
+        // Verify password
+        const isPasswordValid = await comparePassword(password, admin.password);
+        console.log('Password valid:', isPasswordValid);
+
+        if (!isPasswordValid) {
+            admin.loginAttempts += 1;
+            await admin.save();
+            return res.status(401).json({
+                success: false,
+                message: "Invalid admin credentials",
+            });
+        }
+
+        // Reset login attempts and update last login
+        admin.loginAttempts = 0;
+        admin.lastLogin = new Date();
+        await admin.save();
+
+        // Generate JWT token with longer expiry for admin using your token.js function
+        const token = generateToken(admin._id);
+
+        res.status(200).json({
+            success: true,
+            message: 'Admin login successful',
+            data: {
+                user: sanitizeUser(admin),
+                token: token,
+                userType: 'admin',
+                permissions: ['manage_users', 'approve_travelers', 'system_admin']
+            }
+        });
+
+    } catch (err) {
+        console.log(`Error occurred during admin login: ${err.message}`);
+        res.status(500).json({
+            success: false,
+            message: 'Admin login failed. Please try again later.'
+        });
+    }
+};
+
