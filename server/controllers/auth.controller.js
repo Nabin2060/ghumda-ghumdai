@@ -657,3 +657,126 @@ export const resendOTP = async (req, res) => {
     }
 };
 
+// Forgot Password
+export const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        const user = await userModel.findOne({ email: email.toLowerCase() });
+
+        if (!user) {
+            // Don't reveal if user exists or not for security
+            return res.status(200).json({
+                success: true,
+                message: 'If an account with this email exists, a password reset OTP has been sent'
+            });
+        }
+
+        // Generate OTP for password reset
+        const otp = generateOTP();
+        user.otp = otp;
+        await user.save();
+
+        // TODO: Send password reset OTP email
+        // await sendPasswordResetOTP(email, otp);
+
+        res.status(200).json({
+            success: true,
+            message: 'If an account with this email exists, a password reset OTP has been sent'
+        });
+
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to process password reset request'
+        });
+    }
+};
+
+// Reset Password
+export const resetPassword = async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        const user = await userModel.findOne({ email: email.toLowerCase() }).select('+password');
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        if (user.otp !== otp) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid OTP'
+            });
+        }
+
+        // Validate new password strength
+        const passwordValidation = validatePasswordStrength(newPassword);
+        if (!passwordValidation.isValid) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password does not meet requirements',
+                errors: passwordValidation.errors
+            });
+        }
+
+        // Hash new password
+        const hashedPassword = await hashPassword(newPassword);
+
+        // Update password and clear OTP
+        user.password = hashedPassword;
+        user.otp = '';
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Password reset successfully'
+        });
+
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Password reset failed'
+        });
+    }
+};
+
+// Refresh Token
+export const refreshToken = async (req, res) => {
+    try {
+        const userId = req.user._id;
+
+        const user = await userModel.findById(userId);
+
+        if (!user || !user.isActive) {
+            return res.status(401).json({
+                success: false,
+                message: 'User not found or inactive'
+            });
+        }
+
+        // Generate new token using your token.js function
+        const newToken = generateToken(user._id);
+
+        res.status(200).json({
+            success: true,
+            message: 'Token refreshed successfully',
+            data: {
+                token: newToken
+            }
+        });
+
+    } catch (error) {
+        console.error('Refresh token error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Token refresh failed'
+        });
+    }
+};
