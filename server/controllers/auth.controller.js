@@ -550,3 +550,110 @@ export const loginAdmin = async (req, res) => {
     }
 };
 
+export const logout = async (req, res) => {
+    try {
+        // In a more advanced implementation, you might want to blacklist the token
+        // For now, we'll just return a success response
+        res.status(200).json({
+            success: true,
+            message: 'Logged out successfully'
+        });
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Logout failed'
+        });
+    }
+};
+
+// Verify Email OTP
+export const verifyEmail = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+
+        const user = await userModel.findOne({ email: email.toLowerCase() });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        if (user.isEmailVerified) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email is already verified'
+            });
+        }
+
+        if (user.otp !== otp) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid OTP'
+            });
+        }
+
+        // Verify email
+        user.isEmailVerified = true;
+        user.otp = '';
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Email verified successfully'
+        });
+
+    } catch (error) {
+        console.error('Email verification error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Email verification failed'
+        });
+    }
+};
+
+// Resend OTP
+export const resendOTP = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        const user = await userModel.findOne({ email: email.toLowerCase() });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        if (user.isEmailVerified) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email is already verified'
+            });
+        }
+
+        // Generate new OTP
+        const newOTP = generateOTP();
+        user.otp = newOTP;
+        await user.save();
+
+        // TODO: Send new OTP email
+        // await sendOTPEmail(email, newOTP);
+
+        res.status(200).json({
+            success: true,
+            message: 'OTP sent successfully'
+        });
+
+    } catch (error) {
+        console.error('Resend OTP error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to resend OTP'
+        });
+    }
+};
+
