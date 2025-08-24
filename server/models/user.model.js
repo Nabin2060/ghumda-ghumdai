@@ -1,5 +1,6 @@
 
 import mongoose from "mongoose";
+import bcryptjs from 'bcryptjs';
 
 // User schema definition with best practices
 const userSchema = new mongoose.Schema(
@@ -7,7 +8,6 @@ const userSchema = new mongoose.Schema(
         username: {
             type: String,
             required: true,
-            unique: true,
             trim: true,
             minlength: 3,
             maxlength: 30,
@@ -86,6 +86,32 @@ const userSchema = new mongoose.Schema(
                 sms: { type: Boolean, default: false },
                 push: { type: Boolean, default: true }
             }
+        },
+        // Traveler-specific profile (only for traveler applications)
+        travelerProfile: {
+            businessName: String,
+            businessLicense: String,
+            approvalStatus: {
+                type: String,
+                enum: ["pending", "approved", "rejected"],
+                default: "pending"
+            },
+            isApproved: {
+                type: Boolean,
+                default: false
+            },
+            appliedAt: Date,
+            approvedAt: Date,
+            rejectedAt: Date,
+            approvedBy: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'User'
+            },
+            rejectedBy: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'User'
+            },
+            rejectionReason: String
         }
     },
     {
@@ -96,15 +122,28 @@ const userSchema = new mongoose.Schema(
 
 // Indexes for performance and uniqueness
 userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ username: 1 }, { unique: true });
-userSchema.index({ phoneNumber: 1 });
+// userSchema.index({ username: 1 }, { unique: true });
 userSchema.index({ isActive: 1 });
+userSchema.index({ 'travelerProfile.approvalStatus': 1 });
 
 // Virtual for user's full name (if needed later)
 userSchema.virtual('fullName').get(function () {
     return `${this.firstName} ${this.lastName}`;
 });
 
+// Pre-save middleware removed - using hash.js functions in controller instead
+
+// Instance method to compare passwords (using your hash.js function)
+userSchema.methods.comparePassword = async function (candidatePassword) {
+    const { comparePassword } = await import('../utils/hash.js');
+    return await comparePassword(candidatePassword, this.password);
+};
+
+// Instance method to generate auth token - using your token.js function
+userSchema.methods.generateAuthToken = function () {
+    const { generateToken } = require('../utils/token.js');
+    return generateToken(this._id);
+};
 
 // Static method to find active users
 userSchema.statics.findActiveUsers = function () {
@@ -121,7 +160,10 @@ userSchema.statics.findByEmailOrUsername = function (identifier) {
     });
 };
 
-// Optionally, add pre-save hooks, methods, or statics here
+// Static method to find pending traveler applications
+userSchema.statics.findPendingTravelers = function () {
+    return this.find({ 'travelerProfile.approvalStatus': 'pending' });
+};
 
 const User = mongoose.model("User", userSchema);
 
